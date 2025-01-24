@@ -272,6 +272,8 @@ pub(super) async fn do_sync(
     printer: Printer,
     preview: PreviewMode,
 ) -> Result<(), ProjectError> {
+    target.validate_extras(extras)?;
+
     // Extract the project settings.
     let InstallerSettingsRef {
         index_locations,
