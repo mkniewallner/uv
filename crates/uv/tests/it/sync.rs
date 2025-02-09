@@ -1073,7 +1073,7 @@ fn sync_relative_wheel() -> Result<()> {
         },
         {
             assert_snapshot!(
-                lock, @r###"
+                lock, @r#"
             version = 1
             requires-python = ">=3.12"
 
@@ -1088,6 +1088,10 @@ fn sync_relative_wheel() -> Result<()> {
                 { filename = "ok-1.0.0-py3-none-any.whl", hash = "sha256:79f0b33e6ce1e09eaa1784c8eee275dfe84d215d9c65c652f07c18e85fdaac5f" },
             ]
 
+            [package.metadata]
+            provides-extras = []
+            requires-dist = []
+
             [[package]]
             name = "relative-wheel"
             version = "0.1.0"
@@ -1097,8 +1101,9 @@ fn sync_relative_wheel() -> Result<()> {
             ]
 
             [package.metadata]
+            provides-extras = []
             requires-dist = [{ name = "ok", path = "wheels/ok-1.0.0-py3-none-any.whl" }]
-            "###
+            "#
             );
         }
     );
@@ -2406,7 +2411,7 @@ fn sync_group_legacy_non_project_member() -> Result<()> {
         filters => context.filters(),
     }, {
         assert_snapshot!(
-            lock, @r###"
+            lock, @r#"
         version = 1
         requires-python = ">=3.12"
 
@@ -2433,6 +2438,7 @@ fn sync_group_legacy_non_project_member() -> Result<()> {
         ]
 
         [package.metadata]
+        provides-extras = []
         requires-dist = [{ name = "iniconfig", specifier = ">=1" }]
 
         [[package]]
@@ -2452,7 +2458,7 @@ fn sync_group_legacy_non_project_member() -> Result<()> {
         wheels = [
             { url = "https://files.pythonhosted.org/packages/f9/de/dc04a3ea60b22624b51c703a84bbe0184abcd1d0b9bc8074b5d6b7ab90bb/typing_extensions-4.10.0-py3-none-any.whl", hash = "sha256:69b1a937c3a517342112fb4c6df7e72fc39a38e7891a5730ed4985b5214b5475", size = 33926 },
         ]
-        "###
+        "#
         );
     });
 
@@ -2516,7 +2522,7 @@ fn sync_group_self() -> Result<()> {
         filters => context.filters(),
     }, {
         assert_snapshot!(
-            lock, @r###"
+            lock, @r#"
         version = 1
         requires-python = ">=3.12"
 
@@ -2564,6 +2570,7 @@ fn sync_group_self() -> Result<()> {
         ]
 
         [package.metadata]
+        provides-extras = ["test"]
         requires-dist = [
             { name = "idna", marker = "extra == 'test'", specifier = ">=3" },
             { name = "iniconfig", specifier = ">=2" },
@@ -2584,7 +2591,7 @@ fn sync_group_self() -> Result<()> {
         wheels = [
             { url = "https://files.pythonhosted.org/packages/f9/de/dc04a3ea60b22624b51c703a84bbe0184abcd1d0b9bc8074b5d6b7ab90bb/typing_extensions-4.10.0-py3-none-any.whl", hash = "sha256:69b1a937c3a517342112fb4c6df7e72fc39a38e7891a5730ed4985b5214b5475", size = 33926 },
         ]
-        "###
+        "#
         );
     });
 
@@ -2614,6 +2621,91 @@ fn sync_group_self() -> Result<()> {
     Installed 1 package in [TIME]
      + idna==3.6
      - typing-extensions==4.10.0
+    "###);
+
+    Ok(())
+}
+
+#[test]
+fn sync_non_existent_extra() -> Result<()> {
+    let context = TestContext::new("3.12");
+
+    let pyproject_toml = context.temp_dir.child("pyproject.toml");
+    pyproject_toml.write_str(
+        r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        [project.optional-dependencies]
+        types = ["sniffio>1"]
+        async = ["anyio>3"]
+        "#,
+    )?;
+
+    context.lock().assert().success();
+
+    // Requesting a non-existent extra should fail.
+    uv_snapshot!(context.filters(), context.sync().arg("--extra").arg("baz"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 4 packages in [TIME]
+    error: Extra `baz` is not defined in the project's `optional-dependencies` table
+    "###);
+
+    // Excluding a non-existing extra when requesting all extras should fail.
+    uv_snapshot!(context.filters(), context.sync().arg("--all-extras").arg("--no-extra").arg("baz"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 4 packages in [TIME]
+    error: Extra `baz` is not defined in the project's `optional-dependencies` table
+    "###);
+
+    Ok(())
+}
+
+#[test]
+fn sync_non_existent_extra_no_optional_dependencies() -> Result<()> {
+    let context = TestContext::new("3.12");
+
+    let pyproject_toml = context.temp_dir.child("pyproject.toml");
+    pyproject_toml.write_str(
+        r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        "#,
+    )?;
+
+    context.lock().assert().success();
+
+    // Requesting a non-existent extra should fail.
+    uv_snapshot!(context.filters(), context.sync().arg("--extra").arg("baz"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 1 package in [TIME]
+    error: Extra `baz` is not defined in the project's `optional-dependencies` table
+    "###);
+
+    // Excluding a non-existing extra when requesting all extras should fail.
+    uv_snapshot!(context.filters(), context.sync().arg("--all-extras").arg("--no-extra").arg("baz"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 1 package in [TIME]
+    error: Extra `baz` is not defined in the project's `optional-dependencies` table
     "###);
 
     Ok(())
@@ -3001,7 +3093,7 @@ fn convert_to_virtual() -> Result<()> {
         filters => context.filters(),
     }, {
         assert_snapshot!(
-            lock, @r###"
+            lock, @r#"
         version = 1
         requires-python = ">=3.12"
 
@@ -3026,8 +3118,9 @@ fn convert_to_virtual() -> Result<()> {
         ]
 
         [package.metadata]
+        provides-extras = []
         requires-dist = [{ name = "iniconfig" }]
-        "###
+        "#
         );
     });
 
@@ -3060,7 +3153,7 @@ fn convert_to_virtual() -> Result<()> {
         filters => context.filters(),
     }, {
         assert_snapshot!(
-            lock, @r###"
+            lock, @r#"
         version = 1
         requires-python = ">=3.12"
 
@@ -3085,8 +3178,9 @@ fn convert_to_virtual() -> Result<()> {
         ]
 
         [package.metadata]
+        provides-extras = []
         requires-dist = [{ name = "iniconfig" }]
-        "###
+        "#
         );
     });
 
@@ -3128,7 +3222,7 @@ fn convert_to_package() -> Result<()> {
         filters => context.filters(),
     }, {
         assert_snapshot!(
-            lock, @r###"
+            lock, @r#"
         version = 1
         requires-python = ">=3.12"
 
@@ -3153,8 +3247,9 @@ fn convert_to_package() -> Result<()> {
         ]
 
         [package.metadata]
+        provides-extras = []
         requires-dist = [{ name = "iniconfig" }]
-        "###
+        "#
         );
     });
 
@@ -3192,7 +3287,7 @@ fn convert_to_package() -> Result<()> {
         filters => context.filters(),
     }, {
         assert_snapshot!(
-            lock, @r###"
+            lock, @r#"
         version = 1
         requires-python = ">=3.12"
 
@@ -3217,8 +3312,9 @@ fn convert_to_package() -> Result<()> {
         ]
 
         [package.metadata]
+        provides-extras = []
         requires-dist = [{ name = "iniconfig" }]
-        "###
+        "#
         );
     });
 
@@ -4455,7 +4551,7 @@ fn sync_dynamic_extra() -> Result<()> {
         },
         {
             assert_snapshot!(
-                lock, @r###"
+                lock, @r#"
             version = 1
             requires-python = ">=3.12"
 
@@ -4485,6 +4581,7 @@ fn sync_dynamic_extra() -> Result<()> {
             ]
 
             [package.metadata]
+            provides-extras = ["dev"]
             requires-dist = [
                 { name = "iniconfig" },
                 { name = "typing-extensions", marker = "extra == 'dev'" },
@@ -4498,7 +4595,7 @@ fn sync_dynamic_extra() -> Result<()> {
             wheels = [
                 { url = "https://files.pythonhosted.org/packages/f9/de/dc04a3ea60b22624b51c703a84bbe0184abcd1d0b9bc8074b5d6b7ab90bb/typing_extensions-4.10.0-py3-none-any.whl", hash = "sha256:69b1a937c3a517342112fb4c6df7e72fc39a38e7891a5730ed4985b5214b5475", size = 33926 },
             ]
-            "###
+            "#
             );
         }
     );
@@ -5231,7 +5328,7 @@ fn sync_all_extras() -> Result<()> {
      + typing-extensions==4.10.0
     "###);
 
-    // Sync all extras.
+    // Sync all extras excluding an extra that exists in both the parent and child.
     uv_snapshot!(context.filters(), context.sync().arg("--all-packages").arg("--all-extras").arg("--no-extra").arg("types"), @r###"
     success: true
     exit_code: 0
@@ -5241,6 +5338,139 @@ fn sync_all_extras() -> Result<()> {
     Resolved 8 packages in [TIME]
     Uninstalled 1 package in [TIME]
      - typing-extensions==4.10.0
+    "###);
+
+    // Sync an extra that doesn't exist.
+    uv_snapshot!(context.filters(), context.sync().arg("--all-packages").arg("--extra").arg("foo"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 8 packages in [TIME]
+    error: Extra `foo` is not defined in any project's `optional-dependencies` table
+    "###);
+
+    // Sync all extras excluding an extra that doesn't exist.
+    uv_snapshot!(context.filters(), context.sync().arg("--all-packages").arg("--all-extras").arg("--no-extra").arg("foo"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 8 packages in [TIME]
+    error: Extra `foo` is not defined in any project's `optional-dependencies` table
+    "###);
+
+    Ok(())
+}
+
+/// Sync all members in a workspace with dynamic extras.
+#[test]
+fn sync_all_extras_dynamic() -> Result<()> {
+    let context = TestContext::new("3.12");
+
+    let pyproject_toml = context.temp_dir.child("pyproject.toml");
+    pyproject_toml.write_str(
+        r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        dependencies = ["child"]
+
+        [project.optional-dependencies]
+        types = ["sniffio>1"]
+        async = ["anyio>3"]
+
+        [build-system]
+        requires = ["setuptools>=42"]
+        build-backend = "setuptools.build_meta"
+
+        [tool.uv.workspace]
+        members = ["child"]
+
+        [tool.uv.sources]
+        child = { workspace = true }
+        "#,
+    )?;
+    context
+        .temp_dir
+        .child("src")
+        .child("project")
+        .child("__init__.py")
+        .touch()?;
+
+    // Add a workspace member.
+    let child = context.temp_dir.child("child");
+    child.child("pyproject.toml").write_str(
+        r#"
+        [project]
+        name = "child"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        dynamic = ["optional-dependencies"]
+
+        [tool.setuptools.dynamic.optional-dependencies]
+        dev = { file = "requirements-dev.txt" }
+
+        [build-system]
+        requires = ["setuptools>=42"]
+        build-backend = "setuptools.build_meta"
+        "#,
+    )?;
+    child
+        .child("src")
+        .child("child")
+        .child("__init__.py")
+        .touch()?;
+
+    child
+        .child("requirements-dev.txt")
+        .write_str("typing-extensions==4.10.0")?;
+
+    // Generate a lockfile.
+    context.lock().assert().success();
+
+    // Sync an extra that exists in the parent.
+    uv_snapshot!(context.filters(), context.sync().arg("--all-packages").arg("--extra").arg("types"), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 6 packages in [TIME]
+    Prepared 3 packages in [TIME]
+    Installed 3 packages in [TIME]
+     + child==0.1.0 (from file://[TEMP_DIR]/child)
+     + project==0.1.0 (from file://[TEMP_DIR]/)
+     + sniffio==1.3.1
+    "###);
+
+    // Sync a dynamic extra that exists in the child.
+    uv_snapshot!(context.filters(), context.sync().arg("--all-packages").arg("--extra").arg("dev"), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 6 packages in [TIME]
+    Prepared 1 package in [TIME]
+    Uninstalled 1 package in [TIME]
+    Installed 1 package in [TIME]
+     - sniffio==1.3.1
+     + typing-extensions==4.10.0
+    "###);
+
+    // Sync a dynamic extra that doesn't exist in the child.
+    uv_snapshot!(context.filters(), context.sync().arg("--all-packages").arg("--extra").arg("foo"), @r###"
+    success: false
+    exit_code: 2
+    ----- stdout -----
+
+    ----- stderr -----
+    Resolved 6 packages in [TIME]
+    error: Extra `foo` is not defined in any project's `optional-dependencies` table
     "###);
 
     Ok(())
@@ -5650,7 +5880,7 @@ fn sync_stale_egg_info() -> Result<()> {
         },
         {
             assert_snapshot!(
-                lock, @r###"
+                lock, @r#"
             version = 1
             requires-python = ">=3.13"
 
@@ -5667,6 +5897,7 @@ fn sync_stale_egg_info() -> Result<()> {
             ]
 
             [package.metadata]
+            provides-extras = []
             requires-dist = [
                 { name = "member", git = "https://github.com/astral-sh/uv-stale-egg-info-test.git?subdirectory=member" },
                 { name = "root", git = "https://github.com/astral-sh/uv-stale-egg-info-test.git" },
@@ -5696,7 +5927,7 @@ fn sync_stale_egg_info() -> Result<()> {
             wheels = [
                 { url = "https://files.pythonhosted.org/packages/92/e1/1c8bb3420105e70bdf357d57dd5567202b4ef8d27f810e98bb962d950834/setuptools-69.2.0-py3-none-any.whl", hash = "sha256:c21c49fb1042386df081cb5d86759792ab89efca84cf114889191cd09aacc80c", size = 821485 },
             ]
-            "###
+            "#
             );
         }
     );
@@ -5756,7 +5987,7 @@ fn sync_git_repeated_member_static_metadata() -> Result<()> {
         },
         {
             assert_snapshot!(
-                lock, @r###"
+                lock, @r#"
             version = 1
             requires-python = ">=3.13"
 
@@ -5773,6 +6004,7 @@ fn sync_git_repeated_member_static_metadata() -> Result<()> {
             ]
 
             [package.metadata]
+            provides-extras = []
             requires-dist = [
                 { name = "uv-git-workspace-in-root", git = "https://github.com/astral-sh/workspace-in-root-test.git" },
                 { name = "workspace-member-in-subdir", git = "https://github.com/astral-sh/workspace-in-root-test.git?subdirectory=workspace-member-in-subdir" },
@@ -5790,7 +6022,7 @@ fn sync_git_repeated_member_static_metadata() -> Result<()> {
             dependencies = [
                 { name = "uv-git-workspace-in-root" },
             ]
-            "###
+            "#
             );
         }
     );
@@ -5849,7 +6081,7 @@ fn sync_git_repeated_member_dynamic_metadata() -> Result<()> {
         },
         {
             assert_snapshot!(
-                lock, @r###"
+                lock, @r#"
             version = 1
             requires-python = ">=3.13"
 
@@ -5874,6 +6106,7 @@ fn sync_git_repeated_member_dynamic_metadata() -> Result<()> {
             ]
 
             [package.metadata]
+            provides-extras = []
             requires-dist = [
                 { name = "dependency", git = "https://github.com/astral-sh/uv-dynamic-metadata-test.git?subdirectory=dependency" },
                 { name = "package", git = "https://github.com/astral-sh/uv-dynamic-metadata-test.git" },
@@ -5905,7 +6138,7 @@ fn sync_git_repeated_member_dynamic_metadata() -> Result<()> {
             wheels = [
                 { url = "https://files.pythonhosted.org/packages/f9/de/dc04a3ea60b22624b51c703a84bbe0184abcd1d0b9bc8074b5d6b7ab90bb/typing_extensions-4.10.0-py3-none-any.whl", hash = "sha256:69b1a937c3a517342112fb4c6df7e72fc39a38e7891a5730ed4985b5214b5475", size = 33926 },
             ]
-            "###
+            "#
             );
         }
     );
@@ -5966,7 +6199,7 @@ fn sync_git_repeated_member_backwards_path() -> Result<()> {
         },
         {
             assert_snapshot!(
-                lock, @r###"
+                lock, @r#"
             version = 1
             requires-python = ">=3.13"
 
@@ -5988,6 +6221,7 @@ fn sync_git_repeated_member_backwards_path() -> Result<()> {
             ]
 
             [package.metadata]
+            provides-extras = []
             requires-dist = [
                 { name = "dependency", git = "https://github.com/astral-sh/uv-backwards-path-test?subdirectory=dependency" },
                 { name = "package", git = "https://github.com/astral-sh/uv-backwards-path-test?subdirectory=root" },
@@ -6000,7 +6234,7 @@ fn sync_git_repeated_member_backwards_path() -> Result<()> {
             dependencies = [
                 { name = "dependency" },
             ]
-            "###
+            "#
             );
         }
     );
@@ -6147,7 +6381,7 @@ fn sync_git_path_dependency() -> Result<()> {
         },
         {
             assert_snapshot!(
-                lock, @r###"
+                lock, @r#"
             version = 1
             requires-python = ">=3.13"
 
@@ -6163,6 +6397,7 @@ fn sync_git_path_dependency() -> Result<()> {
             ]
 
             [package.metadata]
+            provides-extras = []
             requires-dist = [{ name = "package2", git = "https://github.com/astral-sh/uv-path-dependency-test.git?subdirectory=package2" }]
 
             [[package]]
@@ -6177,7 +6412,7 @@ fn sync_git_path_dependency() -> Result<()> {
             dependencies = [
                 { name = "package1" },
             ]
-            "###
+            "#
             );
         }
     );
@@ -6254,7 +6489,7 @@ fn sync_build_tag() -> Result<()> {
         filters => context.filters(),
     }, {
         assert_snapshot!(
-            lock, @r###"
+            lock, @r#"
         version = 1
         requires-python = ">=3.12"
 
@@ -6280,8 +6515,9 @@ fn sync_build_tag() -> Result<()> {
         ]
 
         [package.metadata]
+        provides-extras = []
         requires-dist = [{ name = "build-tag" }]
-        "###
+        "#
         );
     });
 
